@@ -1,48 +1,71 @@
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const BACKEND_URL = 'http://127.0.0.1:5000';
 
-class FloodApi {
-  async getCurrentPrediction() {
-    const response = await fetch(`${BACKEND_URL}/api/predict/now`);
-    if (!response.ok) throw new Error('Failed to fetch');
-    return response.json();
-  }
+export async function getCurrentPrediction() {
+  const res = await fetch(`${BACKEND_URL}/api/predict/now`);
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+}
 
-  async getForecast7Day() {
-    const response = await fetch(`${BACKEND_URL}/api/forecast/7day`);
-    if (!response.ok) throw new Error('Failed to fetch');
-    return response.json();
-  }
+export async function getForecast7Day() {
+  const res = await fetch(`${BACKEND_URL}/api/forecast/7day`);
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+}
 
-  async getGisZones() {
-    const response = await fetch(`${BACKEND_URL}/api/gis/zones`);
-    if (!response.ok) throw new Error('Failed to fetch');
-    return response.json();
-  }
+export async function getGisZones() {
+  const res = await fetch(`${BACKEND_URL}/api/gis/zones`);
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+}
 
-  async getHourPrediction(offset) {
-    const response = await fetch(`${BACKEND_URL}/api/predict/hour/${offset}`);
-    if (!response.ok) throw new Error('Failed to fetch');
-    return response.json();
-  }
+export async function getHourPrediction(offset) {
+  const res = await fetch(`${BACKEND_URL}/api/predict/hour/${offset}`);
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+}
 
-  async getShapFeatures() {
-    const response = await fetch(`${BACKEND_URL}/api/shap/features`, {
+export async function getShapFeatures() {
+  const res = await fetch(`${BACKEND_URL}/api/shap/features`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sequence: [] })
+  });
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+}
+
+export async function getTemporalShap() {
+  const res = await fetch(`${BACKEND_URL}/api/shap/temporal`, {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+}
+
+export async function getOSMBoundaries() {
+  const overpassUrl = 'https://overpass-api.de/api/interpreter';
+  const query = `
+    [out:json];
+    area["name"="Port Louis"]["admin_level"="6"]->.portlouis;
+    (
+      relation(area.portlouis)["admin_level"="8"];
+      way(area.portlouis)["admin_level"="8"];
+    );
+    out geom;
+  `;
+  
+  try {
+    const response = await fetch(overpassUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sequence: [] })
+      body: `data=${encodeURIComponent(query)}`,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
-    if (!response.ok) throw new Error('Failed to fetch');
-    return response.json();
-  }
-
-  async getTemporalShap() {
-    const response = await fetch(`${BACKEND_URL}/api/shap/temporal`, {
-      method: 'POST',
-      body: JSON.stringify({})
-    });
-    if (!response.ok) throw new Error('Failed to fetch');
-    return response.json();
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('OSM fetch error:', error);
+    return null;
   }
 }
 
-export default new FloodApi();
