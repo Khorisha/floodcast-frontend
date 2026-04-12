@@ -1,7 +1,6 @@
 <template>
   <div>
     <div v-if="loading" class="text-center" style="padding: 80px;">Loading flood data...</div>
-    <div v-else-if="error" class="text-center" style="padding: 80px; color: #c44a3a;">{{ error }}</div>
     <div v-else class="main-grid">
       
       <!-- LEFT PANEL -->
@@ -112,7 +111,6 @@ function toLocalISO(d) {
 
 const prediction = ref(null);
 const loading = ref(true);
-const error = ref(null);
 const showShapModal = ref(false);
 const selectedDate = ref(toLocalISO(new Date()));
 
@@ -213,24 +211,28 @@ async function onDateChange(date) {
 }
 
 onMounted(async () => {
-  try {
-    const [pred, gisData] = await Promise.all([
-      getCurrentPrediction(),
-      getGisZones()
-    ]);
-    prediction.value = pred;
-    if (gisData && gisData.features) {
-      zones.value = gisData.features.map(f => ({
-        name: f.properties.name,
-        risk: f.properties.risk
-      }));
-    }
-    loading.value = false;
-  } catch (err) {
-    console.error(err);
-    error.value = 'Cannot connect to prediction service. Make sure the backend is running.';
-    loading.value = false;
+  // Run both calls independently so one failure does not block the other.
+  const [predResult, gisResult] = await Promise.allSettled([
+    getCurrentPrediction(),
+    getGisZones()
+  ]);
+
+  if (predResult.status === 'fulfilled') {
+    prediction.value = predResult.value;
+  } else {
+    console.error('Prediction fetch failed:', predResult.reason);
   }
+
+  if (gisResult.status === 'fulfilled' && gisResult.value?.features) {
+    zones.value = gisResult.value.features.map(f => ({
+      name: f.properties.name,
+      risk: f.properties.risk
+    }));
+  } else {
+    console.error('GIS fetch failed:', gisResult.reason);
+  }
+
+  loading.value = false;
 });
 </script>
 
