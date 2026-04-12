@@ -1,9 +1,8 @@
-// Local dev hits localhost; anything else (GitHub Pages, etc.) hits the Render backend.
 const isLocal = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 const BACKEND_URL = isLocal
   ? 'http://localhost:5000'
-  : (import.meta.env.VITE_BACKEND_URL || 'https://floodcast-backend-ttv1.onrender.com');
+  : 'https://floodcast-backend-ttv1.onrender.com';
 
 export async function getCurrentPrediction() {
   const res = await fetch(`${BACKEND_URL}/api/predict/now`);

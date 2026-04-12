@@ -4,7 +4,7 @@ const isLocal =
 
 const BACKEND_URL = isLocal
   ? 'http://localhost:5000'
-  : (import.meta?.env?.VITE_BACKEND_URL || 'https://floodcast-backend-ttv1.onrender.com')
+  : 'https://floodcast-backend-ttv1.onrender.com'
 
 function toLocalISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
