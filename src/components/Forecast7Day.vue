@@ -2,7 +2,7 @@
   <div class="card">
     <div class="card-header">
       <div class="card-title">7-Day Flood Risk Forecast</div>
-      <div class="card-subtitle">Daily flood probability based on expected rainfall</div>
+      <div class="card-subtitle">Daily flood probability from AI model predictions</div>
     </div>
     
     <div v-if="loading" class="loading-state">
@@ -59,24 +59,55 @@
     </div>
     
     <div v-if="!loading && !error" class="forecast-note">
-      Flood probability is estimated from expected rainfall intensity
+      Flood probability computed by GRU model using hourly 
+      Weather data by Open-Meteo.com
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { getForecast7Day } from '../services/api'
+import { ref, computed, onMounted, watch } from 'vue'
+import { getForecast7DayFrom } from '../services/api'
+
+const props = defineProps({
+  selectedDate: {
+    type: String,
+    default: null
+  }
+})
 
 const forecastData = ref(null)
 const loading = ref(true)
 const error = ref(false)
 
+function toLocalISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+async function loadForecast(date) {
+  loading.value = true
+  error.value = false
+  try {
+    const fromDate = date || toLocalISO(new Date())
+    const data = await getForecast7DayFrom(fromDate)
+    forecastData.value = data
+  } catch (err) {
+    console.error('Failed to load forecast:', err)
+    error.value = true
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(() => props.selectedDate, (newDate) => {
+  if (newDate) loadForecast(newDate)
+})
+
 function getRiskColor(risk) {
-  if (risk >= 0.04) return '#2c7a8a'   // High: 4%+
-  if (risk >= 0.02) return '#5a9a8a'   // Medium: 2-4%
-  if (risk >= 0.01) return '#8abaaa'   // Low: 1-2%
-  return '#b0c8d0'                      // Minimal: <1%
+  if (risk >= 0.04) return '#2c7a8a'
+  if (risk >= 0.02) return '#5a9a8a'
+  if (risk >= 0.01) return '#8abaaa'
+  return '#b0c8d0'
 }
 
 function getRiskLabel(risk) {
@@ -104,9 +135,11 @@ const forecastDays = computed(() => {
   
   for (let i = 0; i < days.length; i++) {
     const day = days[i]
-    const date = new Date(day.date)
+    // Parse YYYY-MM-DD as local midnight to avoid UTC offset shifting the day
+    const [y, m, d] = day.date.split('-').map(Number)
+    const date = new Date(y, m - 1, d)
     let riskScore = day.max_risk_score || 0.01
-    
+
     result.push({
       date: day.date,
       dateShort: (date.getMonth() + 1) + '/' + date.getDate(),
@@ -151,12 +184,11 @@ const peakRiskPercent = computed(() => {
 
 const weeklyRainTotal = computed(() => {
   if (forecastDays.value.length === 0) return 0
-  
   let total = 0
   for (let i = 0; i < forecastDays.value.length; i++) {
     total = total + forecastDays.value[i].rainfall
   }
-  return total
+  return parseFloat(total.toFixed(1))
 })
 
 const avgRisk = computed(() => {
@@ -173,17 +205,8 @@ const avgRiskPercent = computed(() => {
   return Math.round(avgRisk.value * 100)
 })
 
-onMounted(async () => {
-  try {
-    const data = await getForecast7Day()
-    forecastData.value = data
-    loading.value = false
-    console.log('Forecast data:', data)
-  } catch (err) {
-    console.error('Failed to load forecast:', err)
-    error.value = true
-    loading.value = false
-  }
+onMounted(() => {
+  loadForecast(props.selectedDate)
 })
 </script>
 

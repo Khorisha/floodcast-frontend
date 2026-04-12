@@ -18,7 +18,7 @@
                         transform="rotate(-90 80 80)" style="transition: all 1s;"/>
               </svg>
               <div class="gauge-center">
-                <div class="gauge-number">{{ Math.round((cityProb || 0) * 100) }}</div>
+                <div class="gauge-number">{{ Math.round((cityProb || 0) * 100) }}%</div>
                 <div class="gauge-label">flood probability</div>
               </div>
             </div>
@@ -70,24 +70,25 @@
       <!-- RIGHT PANEL -->
       <div class="right-panel">
         
-        <HourlyCarousel :currentProbability="cityProb" />
+        <HourlyCarousel :currentProbability="cityProb" :selectedDate="selectedDate" />
 
-        <!-- Map moved here - below Hourly Carousel -->
-        <MapContainer ref="mapContainerRef" :cityProb="cityProb" />
+        <!-- Route Planner Map -->
+        <MapContainer />
 
         <div class="card">
           <div class="card-title">Flood Risk by Zone</div>
           <div class="zone-grid">
-            <div v-for="zone in zones" :key="zone.name" class="zone-tile" @click="centerMapOnZone(zone)">
+            <div v-for="zone in enrichedZones" :key="zone.name" class="zone-tile">
               <div class="zone-name">{{ zone.name }}</div>
-              <div class="zone-risk-badge" :style="{ background: getZoneRiskBg(zone.risk), color: getZoneRiskText(zone.risk) }">
-                {{ getRiskLabelShort(zone.risk) }}
+              <div class="zone-prob" :style="{ color: getZoneProbColor(zone.prob) }">{{ Math.round(zone.prob * 100) }}%</div>
+              <div class="zone-risk-badge" :style="{ background: getZoneProbBg(zone.prob), color: getZoneProbColor(zone.prob) }">
+                {{ zone.alertLabel }}
               </div>
             </div>
           </div>
         </div>
 
-        <Forecast7Day />
+        <Forecast7Day :selectedDate="selectedDate" />
       </div>
 
       <ShapModal v-if="showShapModal" @close="closeShapModal" :currentWeather="prediction?.current_weather" />
@@ -97,7 +98,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { getCurrentPrediction, getPredictionForDate } from '../services/api';
+import { getCurrentPrediction, getPredictionForDate, getGisZones } from '../services/api';
 import DateSelector from './DateSelector.vue';
 import ShapModal from './ShapModal.vue';
 import ShapPreview from './ShapPreview.vue';
@@ -105,24 +106,55 @@ import HourlyCarousel from './HourlyCarousel.vue';
 import MapContainer from './MapContainer.vue';
 import Forecast7Day from './Forecast7Day.vue';
 
+function toLocalISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 const prediction = ref(null);
 const loading = ref(true);
 const error = ref(null);
 const showShapModal = ref(false);
-const mapContainerRef = ref(null);
-const selectedDate = ref(new Date().toISOString().split('T')[0]);
+const selectedDate = ref(toLocalISO(new Date()));
 
-const zones = ref([
-  { name: 'Vallee des Pretres', risk: 4.274, lat: -20.1750, lng: 57.5070 },
-  { name: 'La Cure', risk: 4.048, lat: -20.1820, lng: 57.5100 },
-  { name: 'Bell Village', risk: 4.083, lat: -20.1700, lng: 57.5050 },
-  { name: 'Plaine Verte', risk: 3.956, lat: -20.1610, lng: 57.5020 },
-  { name: 'Roche Bois', risk: 3.966, lat: -20.1480, lng: 57.5100 },
-  { name: 'Port Louis CBD', risk: 3.874, lat: -20.1620, lng: 57.4990 },
-  { name: 'Vallee Pitot', risk: 3.850, lat: -20.1650, lng: 57.4980 },
-  { name: 'Champ de Mars', risk: 3.581, lat: -20.1550, lng: 57.5030 },
-  { name: 'Canal Dayot', risk: 3.068, lat: -20.1580, lng: 57.4960 }
-]);
+const zones = ref([]);
+
+// Merge static GIS zone list with live per-zone flood probabilities from the model
+const enrichedZones = computed(() => {
+  const zonePreds = prediction.value?.zone_predictions || {};
+  return zones.value.map(z => {
+    const pred = zonePreds[z.name];
+    const prob = pred ? pred.probability : null;
+    const alert = pred ? pred.alert_level : null;
+    return {
+      ...z,
+      prob: prob ?? 0,
+      alertLabel: alertLabel(alert, prob)
+    };
+  });
+});
+
+function alertLabel(level, prob) {
+  const p = prob ?? 0;
+  if (p >= 0.05) return 'High risk';
+  if (p >= 0.02) return 'Elevated';
+  if (p >= 0.01) return 'Monitor';
+  if (prob === null) return '—';
+  return 'Low risk';
+}
+
+function getZoneProbColor(prob) {
+  if (prob >= 0.05) return '#2c7a8a';
+  if (prob >= 0.02) return '#5a9a8a';
+  if (prob >= 0.01) return '#8abaaa';
+  return '#b0c8d0';
+}
+
+function getZoneProbBg(prob) {
+  if (prob >= 0.05) return '#2c7a8a20';
+  if (prob >= 0.02) return '#5a9a8a20';
+  if (prob >= 0.01) return '#8abaaa20';
+  return '#b0c8d020';
+}
 
 const cityProb = computed(() => prediction.value?.city_prediction?.calibrated_probability || 0);
 const weatherTemp = computed(() => prediction.value?.current_weather?.temp || 25);
@@ -147,16 +179,18 @@ const riskBgClass = computed(() => {
 
 const riskTitle = computed(() => {
   const p = cityProb.value;
-  if (p >= 0.05) return 'FLOOD WARNING';
-  if (p >= 0.02) return 'FLOOD WATCH';
-  return 'NORMAL';
+  if (p >= 0.05) return 'High Flood Risk';
+  if (p >= 0.02) return 'Elevated Risk';
+  if (p >= 0.01) return 'Monitor Conditions';
+  return 'No Flood Risk';
 });
 
 const riskMessage = computed(() => {
   const p = cityProb.value;
-  if (p >= 0.05) return 'Flooding expected. Take action now.';
-  if (p >= 0.02) return 'Conditions being monitored.';
-  return 'No flood risk detected.';
+  if (p >= 0.05) return 'Conditions favour flooding. Stay alert and avoid low-lying areas.';
+  if (p >= 0.02) return 'Rainfall and soil moisture are elevated. Keep an eye on updates.';
+  if (p >= 0.01) return 'Low risk but conditions worth watching.';
+  return 'Current conditions show no significant flood risk.';
 });
 
 function openShapModal() {
@@ -167,52 +201,34 @@ function closeShapModal() {
   showShapModal.value = false;
 }
 
-function getRiskLabelShort(risk) {
-  if (risk >= 4.0) return 'High';
-  if (risk >= 3.7) return 'Medium';
-  return 'Low';
-}
-
-function getZoneRiskBg(risk) {
-  if (risk >= 4.0) return '#2c7a8a20';
-  if (risk >= 3.7) return '#5a9a8a20';
-  return '#8abaaa20';
-}
-
-function getZoneRiskText(risk) {
-  if (risk >= 4.0) return '#2c7a8a';
-  if (risk >= 3.7) return '#5a9a8a';
-  return '#8abaaa';
-}
-
-function centerMapOnZone(zone) {
-  if (mapContainerRef.value && mapContainerRef.value.centerOnZone) {
-    mapContainerRef.value.centerOnZone(zone.name);
-  }
-}
 
 async function onDateChange(date) {
-  loading.value = true;
-  error.value = null;
+  // Silently refresh gauge + zones — HourlyCarousel and Forecast7Day manage their own loading states.
   try {
     const pred = await getPredictionForDate(date);
     prediction.value = pred;
-    loading.value = false;
   } catch (err) {
     console.error(err);
-    error.value = 'Failed to load data for selected date';
-    loading.value = false;
   }
 }
 
 onMounted(async () => {
   try {
-    const pred = await getCurrentPrediction();
+    const [pred, gisData] = await Promise.all([
+      getCurrentPrediction(),
+      getGisZones()
+    ]);
     prediction.value = pred;
+    if (gisData && gisData.features) {
+      zones.value = gisData.features.map(f => ({
+        name: f.properties.name,
+        risk: f.properties.risk
+      }));
+    }
     loading.value = false;
   } catch (err) {
     console.error(err);
-    error.value = 'Cannot connect to prediction service. Make sure backend is running on port 5000.';
+    error.value = 'Cannot connect to prediction service. Make sure the backend is running.';
     loading.value = false;
   }
 });
@@ -329,9 +345,15 @@ onMounted(async () => {
 }
 
 .zone-name {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: #1a3a4a;
+}
+
+.zone-prob {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 3px 0 1px;
 }
 
 .zone-risk-badge {
@@ -369,6 +391,36 @@ onMounted(async () => {
 @media (max-width: 900px) {
   .main-grid {
     grid-template-columns: 1fr;
+  }
+  .zone-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .main-grid {
+    gap: 12px;
+  }
+  .card {
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .gauge {
+    width: 130px;
+    height: 130px;
+  }
+  .gauge-number {
+    font-size: 28px;
+  }
+  .zone-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+  .zone-name {
+    font-size: 10px;
+  }
+  .zone-prob {
+    font-size: 13px;
   }
 }
 </style>

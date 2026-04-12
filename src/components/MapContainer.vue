@@ -4,11 +4,11 @@
       <div class="card-title">Port Louis Flood Hazard Map</div>
       <div class="card-subtitle">Actual district locations from OpenStreetMap</div>
     </div>
-    
+
     <div class="map-wrapper">
       <div id="flood-map" style="width: 100%; height: 100%;"></div>
     </div>
-    
+
     <div class="flex" style="justify-content: center; gap: 16px; margin-top: 12px;">
       <div class="flex"><div style="width: 12px; height: 12px; background: #2c7a8a; border-radius: 2px;"></div><span style="font-size: 11px;">High Risk (4.0+)</span></div>
       <div class="flex"><div style="width: 12px; height: 12px; background: #5a9a8a; border-radius: 2px;"></div><span style="font-size: 11px;">Medium Risk (3.7-4.0)</span></div>
@@ -18,7 +18,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 
 const mapInstance = ref(null);
 const zoneMarkers = ref([]);
@@ -37,13 +37,11 @@ function getRiskLabel(risk) {
 
 async function getCoordinatesFromOSM(placeName) {
   const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(placeName)}&format=json&limit=1`;
-  
   try {
     const response = await fetch(url, {
       headers: { 'User-Agent': 'FloodCastApp/1.0' }
     });
     const data = await response.json();
-    
     if (data && data.length > 0) {
       return {
         lat: parseFloat(data[0].lat),
@@ -57,52 +55,58 @@ async function getCoordinatesFromOSM(placeName) {
   return null;
 }
 
+onUnmounted(() => {
+  if (mapInstance.value) {
+    mapInstance.value.remove();
+    mapInstance.value = null;
+  }
+});
+
 onMounted(async () => {
   const L = await import('leaflet');
   await import('leaflet/dist/leaflet.css');
-  
+
   delete L.Icon.Default.prototype._getIconUrl;
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
     iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
   });
-  
+
   mapInstance.value = L.map('flood-map').setView([-20.1609, 57.5012], 13);
-  
+
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: 'OpenStreetMap & CartoDB',
     subdomains: 'abcd',
     maxZoom: 19
   }).addTo(mapInstance.value);
-  
+
   const districts = [
     { name: 'Vallee des Pretres', query: 'Vallee des Pretres, Port Louis, Mauritius', risk: 4.27 },
-    { name: 'La Cure', query: 'La Cure, Port Louis, Mauritius', risk: 4.05 },
-    { name: 'Bell Village', query: 'Bell Village, Port Louis, Mauritius', risk: 4.08 },
-    { name: 'Plaine Verte', query: 'Plaine Verte, Port Louis, Mauritius', risk: 3.96 },
-    { name: 'Roche Bois', query: 'Roche Bois, Port Louis, Mauritius', risk: 3.97 },
-    { name: 'Port Louis CBD', query: 'Port Louis, Mauritius', risk: 3.87 },
-    { name: 'Vallee Pitot', query: 'Vallee Pitot, Port Louis, Mauritius', risk: 3.85 },
-    { name: 'Champ de Mars', query: 'Champ de Mars, Port Louis, Mauritius', risk: 3.58 },
-    { name: 'Canal Dayot', query: 'Canal Dayot, Port Louis, Mauritius', risk: 3.07 }
+    { name: 'La Cure',            query: 'La Cure, Port Louis, Mauritius',            risk: 4.05 },
+    { name: 'Bell Village',       query: 'Bell Village, Port Louis, Mauritius',       risk: 4.08 },
+    { name: 'Plaine Verte',       query: 'Plaine Verte, Port Louis, Mauritius',       risk: 3.96 },
+    { name: 'Roche Bois',         query: 'Roche Bois, Port Louis, Mauritius',         risk: 3.97 },
+    { name: 'Port Louis CBD',     query: 'Port Louis, Mauritius',                     risk: 3.87 },
+    { name: 'Vallee Pitot',       query: 'Vallee Pitot, Port Louis, Mauritius',       risk: 3.85 },
+    { name: 'Champ de Mars',      query: 'Champ de Mars, Port Louis, Mauritius',      risk: 3.58 },
+    { name: 'Canal Dayot',        query: 'Canal Dayot, Port Louis, Mauritius',        risk: 3.07 }
   ];
-  
+
   for (const district of districts) {
     const coords = await getCoordinatesFromOSM(district.query);
-    
     if (coords) {
-      const color = getRiskColor(district.risk);
+      const color     = getRiskColor(district.risk);
       const riskLabel = getRiskLabel(district.risk);
-      
+
       const marker = L.circleMarker([coords.lat, coords.lon], {
-        radius: 12,
-        color: color,
-        fillColor: color,
+        radius:      12,
+        color:       color,
+        fillColor:   color,
         fillOpacity: 0.8,
-        weight: 3
+        weight:      3
       }).addTo(mapInstance.value);
-      
+
       marker.bindTooltip(`
         <div style="font-family: sans-serif; padding: 4px;">
           <strong>${district.name}</strong><br>
@@ -110,13 +114,13 @@ onMounted(async () => {
           Risk Score: ${district.risk}
         </div>
       `, { sticky: true, direction: 'top' });
-      
+
       zoneMarkers.value.push({
-        name: district.name,
-        lat: coords.lat,
-        lon: coords.lon,
+        name:   district.name,
+        lat:    coords.lat,
+        lon:    coords.lon,
         marker: marker,
-        risk: district.risk
+        risk:   district.risk
       });
     }
   }

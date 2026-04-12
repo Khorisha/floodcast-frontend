@@ -41,10 +41,18 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 
+// Always use local date components — toISOString() converts to UTC and can give the wrong day
+function toLocalISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 const props = defineProps({
   modelValue: {
     type: String,
-    default: () => new Date().toISOString().split('T')[0]
+    default: () => {
+      const d = new Date()
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
   }
 })
 
@@ -53,62 +61,56 @@ const emit = defineEmits(['update:modelValue', 'date-change'])
 const selectedDate = ref(props.modelValue)
 const isLoading = ref(false)
 
-const today = new Date()
-const maxDate = new Date(today)
-maxDate.setDate(today.getDate() + 7)
-const minDate = new Date(today)
-minDate.setDate(today.getDate() - 30)
+const maxDate = computed(() => {
+  const d = new Date()
+  d.setDate(d.getDate() + 7)
+  return toLocalISO(d)
+})
+
+// Allow selection back to 2010 — archive API covers all historical data
+const minDate = '2010-01-01'
 
 const formattedDate = computed(() => {
-  const date = new Date(selectedDate.value)
-  return date.toLocaleDateString('en-US', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
+  // Parse as local midnight to avoid UTC-offset date shifts
+  const [y, m, d] = selectedDate.value.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
   })
 })
 
-const isToday = computed(() => {
-  const todayStr = new Date().toISOString().split('T')[0]
-  return selectedDate.value === todayStr
-})
+const todayStr = computed(() => toLocalISO(new Date()))
 
-const isHistorical = computed(() => {
-  const todayStr = new Date().toISOString().split('T')[0]
-  return selectedDate.value < todayStr
-})
-
-const isFuture = computed(() => {
-  const todayStr = new Date().toISOString().split('T')[0]
-  return selectedDate.value > todayStr
-})
+const isToday = computed(() => selectedDate.value === todayStr.value)
+const isHistorical = computed(() => selectedDate.value < todayStr.value)
+const isFuture = computed(() => selectedDate.value > todayStr.value)
 
 function onDateChange() {
   isLoading.value = true
   emit('update:modelValue', selectedDate.value)
   emit('date-change', selectedDate.value)
-  setTimeout(() => {
-    isLoading.value = false
-  }, 500)
+  setTimeout(() => { isLoading.value = false }, 500)
 }
 
 function setToday() {
-  selectedDate.value = new Date().toISOString().split('T')[0]
+  selectedDate.value = toLocalISO(new Date())
   onDateChange()
 }
 
 function setYesterday() {
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  selectedDate.value = yesterday.toISOString().split('T')[0]
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  selectedDate.value = toLocalISO(d)
   onDateChange()
 }
 
 function setTomorrow() {
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  selectedDate.value = tomorrow.toISOString().split('T')[0]
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  selectedDate.value = toLocalISO(d)
   onDateChange()
 }
 
